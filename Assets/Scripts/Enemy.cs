@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.Scripting.APIUpdating;
 
@@ -9,11 +10,27 @@ public class Enemy : MonoBehaviour
     public float fireRate = 0.3f;
     public float health = 10;
     public int score = 100;
-    private BoundsCheck bndCheck;
+    public float showDamageDuration = 0.1f;
+    public float powerUpDropChance = 1f;
+    [Header("Definiowane dynamicznie")]
+    public Color[] originalColors;
+    public Material[] materials;
+    public bool showingDamage = false;
+    public float damageDoneTime;
+    public bool notifiedOfDestruction = false;
+
+    protected BoundsCheck bndCheck;
 
     void Awake()
     {
         bndCheck = GetComponent<BoundsCheck>();
+        //pobierz materiały i kolory dla tego obiektu gry i jego potomków
+        materials = Utils.GetAllMaterials(gameObject);
+        originalColors = new Color[materials.Length];
+        for (int i = 0; i < materials.Length; i++)
+        {
+            originalColors[i] = materials[i].color;
+        }
     }
 
     //właściwośc to metoda, która zachowuje się jak pole
@@ -31,6 +48,10 @@ public class Enemy : MonoBehaviour
     void Update()
     {
         Move();
+        if (showingDamage && Time.time > damageDoneTime)
+        {
+            UnShowDamage();
+        }
         if ( bndCheck != null && bndCheck.offDown )
         {
                 //obiekt poza krąwędzią dolną -> usuwamy go
@@ -46,14 +67,50 @@ public class Enemy : MonoBehaviour
     void OnCollisionEnter(Collision collision)
     {
         GameObject otherGO = collision.gameObject;
-        if (otherGO.tag == "ProjectileHero")
+        switch (otherGO.tag)
         {
-            Destroy(otherGO);
-            Destroy(gameObject);
+            case "ProjectileHero":
+                Projectile p = otherGO.GetComponent<Projectile>();
+                //jeśli statek jest poza ekranem nie uszkadzaj go
+                if (!bndCheck.isOnScreen)
+                {
+                    Destroy(otherGO);
+                    break;
+                }
+                //uszkodź ten statek , pobierz poziom uszkodzeń ze słownika WEAP_DICT w klasie Main
+                ShowDamage();
+                health -= Main.GetWeaponDefinition(p.type).damageOnHit;
+                if (health <= 0)
+                {
+                    if (!notifiedOfDestruction)
+                    {
+                        Main.S.ShipDestroyed(this);
+                    }
+                    notifiedOfDestruction = true;
+                    Destroy(this.gameObject);
+                }
+                Destroy(otherGO);
+                break;
+            default:
+                print("wróg trafiony przez obiekt inny niż ProjectileHero: " + otherGO.name);
+                break;
         }
-        else
+    }
+    void ShowDamage()
+    {
+        foreach (Material m in materials)
         {
-            print("Trafienie wroga przez obiekt inny niż pocisk gracza: " + otherGO.name);
+            m.color = Color.red;
         }
+        showingDamage = true;
+        damageDoneTime = Time.time + showDamageDuration;
+    }
+    void UnShowDamage()
+    {
+        for (int i = 0; i < materials.Length; i++)
+        {
+            materials[i].color = originalColors[i];
+        }
+        showingDamage = false;
     }
 }
